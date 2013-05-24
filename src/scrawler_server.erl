@@ -57,7 +57,8 @@ init([]) ->
 handle_call({grab, Url}, _From, State) ->
     {ok, {_State, _Headers, Body}} = httpc:request(Url),
     Tree = mochiweb_html:parse(Body),
-    Results = mochiweb_xpath:execute("//div[@class='mainborder']", Tree),
+    % MidResults = mochiweb_xpath:execute("//table[@class='calendarTable']", Tree),
+    Results = mochiweb_xpath:execute("//table[@class='calendarTable']/tr", Tree),
     {reply, Results, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,
@@ -103,4 +104,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 grab(Country) ->
     gen_server:call(?MODULE, {grab, ?URL(Country)}). 
-
