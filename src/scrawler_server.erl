@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, grab/1]).
+-export([start_link/0, grab_main_calendar/1, save_img/1, grab_team_edata/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -18,7 +18,10 @@
 
 -record(state, {}).
 -define(SERVER, ?MODULE).
--define(URL(COUNTRY), "http://www.soccer.ru/" ++ COUNTRY++ "/games").
+
+-define(MAIN_URL, "http://www.soccer.ru").
+-define(URL(COUNTRY), ?MAIN_URL ++ "/" ++ COUNTRY++ "/games").
+
 
 %%====================================================================
 %% API
@@ -57,9 +60,14 @@ init([]) ->
 handle_call({grab, Url}, _From, State) ->
     {ok, {_State, _Headers, Body}} = httpc:request(Url),
     Tree = mochiweb_html:parse(Body),
-    % MidResults = mochiweb_xpath:execute("//table[@class='calendarTable']", Tree),
-    Results = mochiweb_xpath:execute("//table[@class='calendarTable']/tr", Tree),
+    {reply, Tree, State};
+handle_call({grab, Url, XpathTempl}, _From, State) ->
+    {ok, {_State, _Headers, Body}} = httpc:request(Url),
+    Tree = mochiweb_html:parse(Body),
+    Results = mochiweb_xpath:execute(XpathTempl, Tree),
     {reply, Results, State};
+handle_call({xpath, XpathTempl, Tree}, _From, State) ->
+    {reply, mochiweb_xpath:execute(XpathTempl, Tree), State};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -70,6 +78,11 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
+handle_cast({save_img, ImgSrc}, State) ->
+  {ok, {_State, _Headers, Body}} = httpc:request(?MAIN_URL ++ ImgSrc),
+  {ok, Path} = file:get_cwd(),
+  file:write_file(Path ++ ImgSrc, Body), 
+  {noreply, State};
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
@@ -102,5 +115,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-grab(Country) ->
-    gen_server:call(?MODULE, {grab, ?URL(Country)}). 
+grab_main_calendar(Country) ->
+    gen_server:call(?MODULE, {grab, ?URL(Country), "//table[@class='calendarTable']/tr"}, 10000). 
+
+save_img(ImgSrc) ->
+  gen_server:cast(?MODULE, {save_img, binary_to_list(ImgSrc)}). 
+
+grab_team_edata(Href) ->
+  Tree = gen_server:call(?MODULE, {grab, ?MAIN_URL ++ Href}, 10000),
+  [{_, [{<<"src">>, TeamLogo},_,_], _}] = gen_server:call(?MODULE, {xpath, "//table[@class='maintable']/tr/td/table/tr/td/img", Tree}, 10000),
+  [{_, _, Other}]  = gen_server:call(?MODULE, {xpath, "//table[@class='maintable']/tr[3]/td", Tree}, 10000),
+  {TeamLogo, Other}.
+  
+
